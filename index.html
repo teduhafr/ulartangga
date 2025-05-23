@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ular Tangga Multiplayer Lokal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; 
+        }
+        .board-grid {
+            display: grid;
+            grid-template-columns: repeat(10, 1fr);
+            grid-template-rows: repeat(10, 1fr);
+            border: 2px solid #4A5568; /* gray-700 */
+            aspect-ratio: 1 / 1;
+            max-width: 600px; 
+            width: 90vw; 
+            margin: auto;
+            position: relative; /* Diperlukan untuk SVG overlay */
+        }
+        .board-cell {
+            border: 1px solid #CBD5E0; /* gray-400 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem; 
+            position: relative;
+            background-size: cover;
+            background-position: center;
+        }
+        .player-piece {
+            width: 60%; 
+            height: 60%;
+            border-radius: 50%;
+            position: absolute;
+            transition: top 0.5s ease-in-out, left 0.5s ease-in-out; /* Animasi spesifik untuk top dan left */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: white;
+            text-shadow: 1px 1px 1px black;
+            background-size: cover;
+            background-position: center;
+            border: 2px solid white;
+            box-shadow: 0 0 5px rgba(0,0,0,0.5);
+            z-index: 10; /* Pastikan bidak di atas garis */
+        }
+
+        .dice {
+            width: 60px; height: 60px;
+            perspective: 300px;
+        }
+        .dice-cube {
+            width: 100%; height: 100%;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 1s;
+        }
+        .dice-face {
+            position: absolute;
+            width: 60px; height: 60px;
+            border: 1px solid #ccc;
+            background: rgba(255,255,255,0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .face-1 { transform: rotateY(0deg) translateZ(30px); }
+        .face-2 { transform: rotateY(90deg) translateZ(30px); }
+        .face-3 { transform: rotateY(180deg) translateZ(30px); }
+        .face-4 { transform: rotateY(-90deg) translateZ(30px); }
+        .face-5 { transform: rotateX(90deg) translateZ(30px); }
+        .face-6 { transform: rotateX(-90deg) translateZ(30px); }
+
+        .modal {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            min-width: 300px;
+            max-width: 90%;
+        }
+        .cell-number {
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            font-size: 0.6rem; 
+            color: #4A5568; 
+            font-weight: bold;
+            z-index: 1; 
+        }
+
+        .player-info-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .player-info-card.current-player {
+            transform: scale(1.05);
+            box-shadow: 0 0 15px rgba(76, 175, 80, 0.7); 
+        }
+        .added-player-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.375rem;
+            margin-bottom: 8px;
+        }
+        .added-player-item img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            margin-right: 12px;
+            object-fit: cover;
+        }
+        #board-svg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; 
+            z-index: 5; 
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div id="app-container" class="w-full max-w-4xl mx-auto">
+
+        <div id="setup-screen" class="bg-white p-6 rounded-lg shadow-xl mb-6">
+            <h1 class="text-3xl font-bold text-center text-indigo-600 mb-6">Ular Tangga Lokal</h1>
+            
+            <div class="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                    <label for="playerNameSetup" class="block text-sm font-medium text-gray-700">Nama Pemain:</label>
+                    <input type="text" id="playerNameSetup" class="mt-1 block w-full px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" placeholder="Masukkan nama pemain">
+                    
+                    <div class="mt-4">
+                        <h3 class="text-lg font-medium text-gray-900 mb-2">Pemain Ditambahkan:</h3>
+                        <div id="addedPlayersList" class="max-h-40 overflow-y-auto bg-gray-50 p-3 rounded-md border">
+                            <p class="text-sm text-gray-500 italic">Belum ada pemain ditambahkan.</p>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">Avatar Webcam (Opsional):</label>
+                    <div class="mt-1 flex items-center space-x-3">
+                        <video id="webcamFeed" width="120" height="90" autoplay playsinline class="rounded-md border bg-gray-200"></video>
+                        <canvas id="avatarCanvas" width="120" height="90" class="hidden"></canvas>
+                        <button id="setAvatarButton" class="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-sm">Ambil Avatar</button>
+                    </div>
+                    <img id="currentAvatarPreview" src="https://placehold.co/80x80/E2E8F0/A0AEC0?text=Avatar" alt="Pratinjau Avatar" class="mt-2 w-20 h-20 rounded-full border object-cover">
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-4 mt-6">
+                <button id="addPlayerButton" class="w-full sm:w-auto px-6 py-3 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-150 text-lg font-semibold">Tambah Pemain</button>
+                <button id="startLocalGameButton" class="w-full sm:w-auto px-6 py-3 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition duration-150 text-lg font-semibold">Mulai Game</button>
+            </div>
+            <p id="setupMessage" class="mt-4 text-center text-sm text-red-500"></p>
+        </div>
+
+        <div id="game-screen" class="hidden w-full">
+            <div class="flex flex-col lg:flex-row gap-4">
+                <div class="flex-grow">
+                    <div class="flex justify-between items-center mb-2">
+                        <h2 class="text-2xl font-bold text-indigo-600">Permainan Ular Tangga</h2>
+                        <button id="newGameButton" class="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 text-sm">Game Baru</button>
+                    </div>
+                    <div id="board-container" class="board-grid shadow-lg rounded-md overflow-hidden">
+                        {/* Sel papan dan SVG overlay akan digenerate oleh JavaScript */}
+                    </div>
+                    <div id="gameMessage" class="mt-4 text-center font-semibold text-lg text-purple-700 h-8"></div>
+                </div>
+
+                <div class="lg:w-1/3 w-full bg-white p-4 rounded-lg shadow-xl">
+                    <h3 class="text-xl font-semibold mb-3 text-center text-indigo-700">Pemain</h3>
+                    <div id="playersContainer" class="space-y-3 mb-4 max-h-60 overflow-y-auto">
+                        {/* Info pemain akan digenerate oleh JavaScript */}
+                    </div>
+                    
+                    <div class="text-center mb-4">
+                        <p class="text-sm text-gray-600">Giliran: <span id="currentPlayerNameDisplay" class="font-bold text-xl"></span></p>
+                    </div>
+
+                    <div class="flex justify-center my-4">
+                        <div class="dice" id="diceAnimationContainer">
+                            <div class="dice-cube" id="diceCube">
+                                <div class="dice-face face-1">1</div>
+                                <div class="dice-face face-2">2</div>
+                                <div class="dice-face face-3">3</div>
+                                <div class="dice-face face-4">4</div>
+                                <div class="dice-face face-5">5</div>
+                                <div class="dice-face face-6">6</div>
+                            </div>
+                        </div>
+                    </div>
+                    <p id="diceValueDisplay" class="text-center text-4xl font-bold my-3 text-green-600 h-10"></p>
+                    <button id="rollDiceButton" class="w-full px-6 py-3 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition duration-150 text-lg font-semibold shadow-md disabled:opacity-50">Gulir Dadu!</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="winnerModal" class="modal hidden">
+            <div class="modal-content text-center bg-white p-8 rounded-lg shadow-2xl">
+                <h2 class="text-3xl font-bold text-yellow-500 mb-4">Selamat!</h2>
+                <img id="winnerAvatarModal" src="https://placehold.co/100x100/E2E8F0/A0AEC0?text=Pemenang" alt="Avatar Pemenang" class="w-24 h-24 rounded-full mx-auto mb-4 border-4 border-yellow-400 object-cover">
+                <p id="winnerMessage" class="text-xl mb-6"></p>
+                <button id="playAgainButton" class="px-6 py-3 bg-green-500 text-white rounded-md hover:bg-green-600 text-lg">Main Lagi</button>
+                <button id="closeWinnerModalButton" class="ml-2 px-6 py-3 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 text-lg">Tutup</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // Variabel Global Lokal
+        let localPlayers = [];
+        let localCurrentPlayerIndex = 0;
+        let localGameStatus = 'waiting'; 
+        let localDiceValue = null; // Menyimpan nilai dadu asli yang digulir
+        let localWinner = null; 
+        let nextPlayerColorIndex = 0;
+        let currentAvatarForSetup = 'https://placehold.co/80x80/E2E8F0/A0AEC0?text=Avatar'; 
+        const ANIMATION_STEP_DURATION = 600; // Durasi animasi pergerakan (ms), sesuaikan dengan CSS transition
+
+        const playerColors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500'];
+        const MAX_PLAYERS = 4;
+        const MIN_PLAYERS = 2;
+
+        // Elemen DOM
+        const setupScreen = document.getElementById('setup-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const playerNameSetupInput = document.getElementById('playerNameSetup');
+        const addPlayerButton = document.getElementById('addPlayerButton');
+        const addedPlayersList = document.getElementById('addedPlayersList');
+        const startLocalGameButton = document.getElementById('startLocalGameButton');
+        
+        const boardContainer = document.getElementById('board-container');
+        const playersContainer = document.getElementById('playersContainer');
+        const rollDiceButton = document.getElementById('rollDiceButton');
+        const diceValueDisplay = document.getElementById('diceValueDisplay');
+        const gameMessage = document.getElementById('gameMessage');
+        const currentPlayerNameDisplay = document.getElementById('currentPlayerNameDisplay');
+        const setupMessage = document.getElementById('setupMessage');
+        const newGameButton = document.getElementById('newGameButton'); 
+
+        const webcamFeed = document.getElementById('webcamFeed');
+        const avatarCanvas = document.getElementById('avatarCanvas');
+        const setAvatarButton = document.getElementById('setAvatarButton');
+        const currentAvatarPreview = document.getElementById('currentAvatarPreview');
+        
+        const winnerModal = document.getElementById('winnerModal');
+        const winnerAvatarModal = document.getElementById('winnerAvatarModal');
+        const winnerMessage = document.getElementById('winnerMessage');
+        const playAgainButton = document.getElementById('playAgainButton');
+        const closeWinnerModalButton = document.getElementById('closeWinnerModalButton');
+
+        const diceCube = document.getElementById('diceCube');
+ 
+        const BOARD_SIZE = 100;
+        const snakes = { 98: 28, 95: 24, 92: 51, 83: 19, 73: 1, 69: 33, 64: 36, 59: 17, 55: 7, 52: 11, 48: 9, 46: 5, 44: 22 };
+        const ladders = { 8: 26, 21: 82, 43: 77, 50: 91, 54: 93, 62: 96, 66: 87, 80: 100 };
+
+        // --- FUNGSI WEBCAM ---
+        async function setupWebcam() {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    if (webcamFeed) webcamFeed.srcObject = stream;
+                } catch (err) {
+                    console.error("Error mengakses webcam:", err);
+                    if (setupMessage) setupMessage.textContent = "Tidak bisa mengakses webcam. Avatar default akan digunakan.";
+                    if (webcamFeed) webcamFeed.style.display = 'none'; 
+                    if (setAvatarButton) setAvatarButton.disabled = true;
+                }
+            } else {
+                console.warn("getUserMedia tidak didukung");
+                 if (setupMessage) setupMessage.textContent = "Browser tidak mendukung webcam. Avatar default akan digunakan.";
+                if (webcamFeed) webcamFeed.style.display = 'none';
+                if (setAvatarButton) setAvatarButton.disabled = true;
+            }
+        }
+
+        setAvatarButton.addEventListener('click', () => {
+            if (webcamFeed && webcamFeed.srcObject && webcamFeed.videoWidth > 0 && webcamFeed.videoHeight > 0) {
+                const context = avatarCanvas.getContext('2d');
+                avatarCanvas.width = webcamFeed.videoWidth;
+                avatarCanvas.height = webcamFeed.videoHeight;
+                context.drawImage(webcamFeed, 0, 0, avatarCanvas.width, avatarCanvas.height);
+                currentAvatarForSetup = avatarCanvas.toDataURL('image/jpeg', 0.7); 
+                currentAvatarPreview.src = currentAvatarForSetup;
+            } else {
+                 if (setupMessage) setupMessage.textContent = "Webcam tidak aktif atau belum siap.";
+            }
+        });
+        
+        // --- FUNGSI PAPAN PERMAINAN ---
+        function createBoard() {
+            boardContainer.innerHTML = ''; 
+            const cells = [];
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                cells.push(document.createElement('div'));
+            }
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                const cell = cells[i];
+                const cellNumber = getCellNumber(i);
+                cell.id = `cell-${cellNumber}`;
+                cell.classList.add('board-cell', 'relative');
+                
+                const numberSpan = document.createElement('span');
+                numberSpan.classList.add('cell-number');
+                numberSpan.textContent = cellNumber;
+                cell.appendChild(numberSpan);
+                boardContainer.appendChild(cell);
+            }
+            drawSnakesAndLaddersLines(); 
+        }
+
+        function getCellNumber(index) {
+            const row = Math.floor(index / 10);
+            const col = index % 10;
+            let number;
+            if (row % 2 === 0) { 
+                number = BOARD_SIZE - (row * 10) - col;
+            } else { 
+                number = BOARD_SIZE - (row * 10) - (9 - col);
+            }
+            return number;
+        }
+        
+        function getCellCoordinates(cellNumber) {
+            const cellElement = document.getElementById(`cell-${cellNumber}`);
+            if (!cellElement) return null; 
+
+            const boardRect = boardContainer.getBoundingClientRect();
+            const cellRect = cellElement.getBoundingClientRect();
+            
+            return {
+                x: (cellRect.left - boardRect.left) + cellRect.width / 2,
+                y: (cellRect.top - boardRect.top) + cellRect.height / 2,
+                width: cellRect.width, 
+                height: cellRect.height
+            };
+        }
+
+        function drawSnakesAndLaddersLines() {
+            let svgOverlay = document.getElementById('board-svg-overlay');
+            if (svgOverlay) svgOverlay.remove(); 
+
+            svgOverlay = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            svgOverlay.setAttribute('id', 'board-svg-overlay');
+            svgOverlay.setAttribute('width', '100%');
+            svgOverlay.setAttribute('height', '100%');
+            
+            const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+            const markerSnake = document.createElementNS("http://www.w3.org/2000/svg", "marker");
+            markerSnake.setAttribute('id', 'arrowhead-snake');
+            markerSnake.setAttribute('markerWidth', '8'); // Sedikit lebih besar untuk path
+            markerSnake.setAttribute('markerHeight', '6');
+            markerSnake.setAttribute('refX', '7'); // Disesuaikan agar panah tidak terlalu menjorok ke dalam path
+            markerSnake.setAttribute('refY', '3');
+            markerSnake.setAttribute('orient', 'auto-start-reverse'); // Orientasi untuk path
+            const polygonSnake = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+            polygonSnake.setAttribute('points', '0 0, 8 3, 0 6'); // Bentuk panah
+            polygonSnake.setAttribute('fill', '#E53E3E'); 
+            markerSnake.appendChild(polygonSnake);
+            defs.appendChild(markerSnake);
+            svgOverlay.appendChild(defs);
+
+            // Gambar Ular (Melengkung)
+            Object.keys(snakes).forEach((startCellKey, index) => {
+                const startCell = parseInt(startCellKey);
+                const endCell = snakes[startCell];
+                const P1 = getCellCoordinates(startCell); // Kepala Ular
+                const P2 = getCellCoordinates(endCell);   // Ekor Ular
+
+                if (P1 && P2) {
+                    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                    const midX = (P1.x + P2.x) / 2;
+                    const midY = (P1.y + P2.y) / 2;
+                    const deltaX = P2.x - P1.x;
+                    const deltaY = P2.y - P1.y;
+                    const dist = Math.sqrt(deltaX*deltaX + deltaY*deltaY);
+                    
+                    // Faktor kelengkungan dan arah bisa bervariasi
+                    let curveFactor = dist * 0.20; // Besarnya lengkungan
+                    // Arah lengkungan bisa dibuat bervariasi, misal berdasarkan ganjil/genap index atau posisi
+                    const curveDirection = (index % 2 === 0) ? 1 : -1; 
+                    if (Math.abs(deltaX) < P1.width) curveFactor *= 1.5; // Lebih melengkung jika vertikal
+                    if (Math.abs(deltaY) < P1.height) curveFactor *= 0.7; // Kurang melengkung jika horizontal
+
+                    const controlX = midX - curveDirection * (deltaY / dist) * curveFactor;
+                    const controlY = midY + curveDirection * (deltaX / dist) * curveFactor;
+                    
+                    const dValue = `M ${P1.x} ${P1.y} Q ${controlX} ${controlY} ${P2.x} ${P2.y}`;
+                    path.setAttribute('d', dValue);
+                    path.setAttribute('stroke', '#F56565'); 
+                    path.setAttribute('stroke-width', '4');
+                    path.setAttribute('fill', 'none');
+                    path.setAttribute('marker-end', 'url(#arrowhead-snake)'); 
+                    svgOverlay.appendChild(path);
+                }
+            });
+
+            // Gambar Tangga (Tetap garis lurus, tapi bisa ditingkatkan jika mau)
+            for (const startCell in ladders) {
+                const endCell = ladders[startCell];
+                const startCoords = getCellCoordinates(parseInt(startCell));
+                const endCoords = getCellCoordinates(parseInt(endCell));
+
+                if (startCoords && endCoords) {
+                    const ladderWidth = Math.min(startCoords.width, startCoords.height) * 0.15; 
+                    const dx = endCoords.x - startCoords.x;
+                    const dy = endCoords.y - startCoords.y;
+                    const len = Math.sqrt(dx*dx + dy*dy);
+                    if (len === 0) continue; // Hindari pembagian dengan nol
+                    const perpX = -dy / len * ladderWidth;
+                    const perpY = dx / len * ladderWidth;
+
+                    const line1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line1.setAttribute('x1', startCoords.x + perpX);
+                    line1.setAttribute('y1', startCoords.y + perpY);
+                    line1.setAttribute('x2', endCoords.x + perpX);
+                    line1.setAttribute('y2', endCoords.y + perpY);
+                    line1.setAttribute('stroke', '#48BB78'); 
+                    line1.setAttribute('stroke-width', '3');
+                    svgOverlay.appendChild(line1);
+
+                    const line2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                    line2.setAttribute('x1', startCoords.x - perpX);
+                    line2.setAttribute('y1', startCoords.y - perpY);
+                    line2.setAttribute('x2', endCoords.x - perpX);
+                    line2.setAttribute('y2', endCoords.y - perpY);
+                    line2.setAttribute('stroke', '#48BB78'); 
+                    line2.setAttribute('stroke-width', '3');
+                    svgOverlay.appendChild(line2);
+
+                    const numRungs = Math.max(1, Math.floor(len / (ladderWidth * 2.5))); 
+                    for (let i = 1; i <= numRungs; i++) {
+                        const rungX1 = startCoords.x + (dx * i / (numRungs + 1)) + perpX;
+                        const rungY1 = startCoords.y + (dy * i / (numRungs + 1)) + perpY;
+                        const rungX2 = startCoords.x + (dx * i / (numRungs + 1)) - perpX;
+                        const rungY2 = startCoords.y + (dy * i / (numRungs + 1)) - perpY;
+                        
+                        const rungLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                        rungLine.setAttribute('x1', rungX1);
+                        rungLine.setAttribute('y1', rungY1);
+                        rungLine.setAttribute('x2', rungX2);
+                        rungLine.setAttribute('y2', rungY2);
+                        rungLine.setAttribute('stroke', '#68D391'); 
+                        rungLine.setAttribute('stroke-width', '2.5');
+                        svgOverlay.appendChild(rungLine);
+                    }
+                }
+            }
+            boardContainer.appendChild(svgOverlay);
+        }
+
+        // --- FUNGSI SETUP PEMAIN LOKAL ---
+        addPlayerButton.addEventListener('click', () => {
+            const playerName = playerNameSetupInput.value.trim();
+            if (!playerName) {
+                setupMessage.textContent = "Nama pemain tidak boleh kosong.";
+                return;
+            }
+            if (localPlayers.length >= MAX_PLAYERS) {
+                setupMessage.textContent = `Maksimal ${MAX_PLAYERS} pemain.`;
+                return;
+            }
+            const newPlayer = {
+                id: `player-${Date.now()}-${localPlayers.length}`, 
+                name: playerName,
+                avatar: currentAvatarForSetup,
+                position: 1,
+                color: playerColors[nextPlayerColorIndex % playerColors.length]
+            };
+            localPlayers.push(newPlayer);
+            nextPlayerColorIndex++;
+            updateAddedPlayersList();
+            playerNameSetupInput.value = ''; 
+            currentAvatarPreview.src = 'https://placehold.co/80x80/E2E8F0/A0AEC0?text=Avatar'; 
+            currentAvatarForSetup = 'https://placehold.co/80x80/E2E8F0/A0AEC0?text=Avatar'; 
+            setupMessage.textContent = `${playerName} ditambahkan!`;
+        });
+
+        function updateAddedPlayersList() {
+            addedPlayersList.innerHTML = '';
+            if (localPlayers.length === 0) {
+                addedPlayersList.innerHTML = '<p class="text-sm text-gray-500 italic">Belum ada pemain ditambahkan.</p>';
+                return;
+            }
+            localPlayers.forEach(player => {
+                const playerItem = document.createElement('div');
+                playerItem.classList.add('added-player-item');
+                playerItem.innerHTML = `
+                    <img src="${player.avatar}" alt="${player.name}">
+                    <span class="font-medium">${player.name}</span>
+                `;
+                addedPlayersList.appendChild(playerItem);
+            });
+        }
+
+        startLocalGameButton.addEventListener('click', () => {
+            if (localPlayers.length < MIN_PLAYERS) {
+                setupMessage.textContent = `Minimal ${MIN_PLAYERS} pemain untuk memulai.`;
+                return;
+            }
+            localGameStatus = 'playing';
+            localCurrentPlayerIndex = 0;
+            localWinner = null;
+            localDiceValue = null;
+            switchToGameScreen();
+            updateUI(); 
+        });
+
+        // --- FUNGSI GAME LOGIC LOKAL ---
+        rollDiceButton.addEventListener('click', () => {
+            if (localGameStatus !== 'playing' || localPlayers.length === 0) return;
+
+            rollDiceButton.disabled = true; 
+            const rolledValue = Math.floor(Math.random() * 6) + 1;
+            localDiceValue = rolledValue; // Simpan nilai dadu asli
+            
+            animateDiceRoll(rolledValue); 
+
+            setTimeout(() => {
+                const currentPlayer = localPlayers[localCurrentPlayerIndex];
+                if (!currentPlayer) { 
+                    rollDiceButton.disabled = false; return;
+                }
+
+                let message = `${currentPlayer.name} menggulir ${rolledValue}.`;
+                let intermediatePosition = currentPlayer.position + rolledValue;
+
+                if (intermediatePosition > BOARD_SIZE) {
+                    intermediatePosition = BOARD_SIZE - (intermediatePosition - BOARD_SIZE); 
+                    message += ` Mundur ke ${intermediatePosition}.`;
+                }
+                
+                gameMessage.textContent = message + " Bergerak...";
+                // Perbarui posisi untuk animasi pertama (pergerakan dadu)
+                currentPlayer.position = intermediatePosition; 
+                updateUI(); // Ini akan memicu transisi CSS untuk pergerakan pertama
+
+                setTimeout(() => {
+                    // Cek ular/tangga setelah animasi pertama selesai
+                    let finalPosition = intermediatePosition;
+                    let onSpecial = false;
+
+                    if (snakes[intermediatePosition]) {
+                        finalPosition = snakes[intermediatePosition];
+                        message += ` Turun ular ke ${finalPosition}!`;
+                        onSpecial = true;
+                    } else if (ladders[intermediatePosition]) {
+                        finalPosition = ladders[intermediatePosition];
+                        message += ` Naik tangga ke ${finalPosition}!`;
+                        onSpecial = true;
+                    }
+
+                    if (onSpecial) {
+                        gameMessage.textContent = message + " Bergerak lagi...";
+                        // Perbarui posisi untuk animasi kedua (ular/tangga)
+                        currentPlayer.position = finalPosition;
+                        updateUI(); // Ini akan memicu transisi CSS untuk pergerakan kedua
+                        
+                        setTimeout(() => {
+                            checkWinAndUpdateTurn(currentPlayer, finalPosition, message);
+                        }, ANIMATION_STEP_DURATION);
+                    } else {
+                        // Tidak ada ular/tangga, langsung selesaikan giliran
+                        checkWinAndUpdateTurn(currentPlayer, finalPosition, message.replace(" Bergerak...", ""));
+                    }
+                }, ANIMATION_STEP_DURATION);
+            }, 1200); // Waktu untuk animasi dadu
+        });
+
+        function checkWinAndUpdateTurn(player, finalPos, turnMessage) {
+            player.position = finalPos; // Pastikan posisi data model sudah final
+
+            if (finalPos === BOARD_SIZE) {
+                turnMessage = `${player.name} MENANG!`; // Ganti pesan jika menang
+                localGameStatus = 'finished';
+                localWinner = player;
+            } else {
+                localCurrentPlayerIndex = (localCurrentPlayerIndex + 1) % localPlayers.length;
+            }
+            gameMessage.textContent = turnMessage;
+            updateUI(); // Update UI final untuk giliran, pemenang, dll.
+            
+            if (localGameStatus === 'playing') {
+                rollDiceButton.disabled = false;
+            }
+        }
+
+
+        function animateDiceRoll(finalValue) { 
+            diceValueDisplay.textContent = ''; 
+            let currentRotationX = 0;
+            let currentRotationY = 0;
+            switch (finalValue) {
+                case 1: currentRotationX = 0; currentRotationY = 0; break;
+                case 2: currentRotationX = 0; currentRotationY = -90; break;
+                case 3: currentRotationX = 0; currentRotationY = -180; break;
+                case 4: currentRotationX = 0; currentRotationY = 90; break;
+                case 5: currentRotationX = -90; currentRotationY = 0; break;
+                case 6: currentRotationX = 90; currentRotationY = 0; break;
+            }
+            const randomSpinsX = 2 * 360; 
+            const randomSpinsY = 2 * 360;
+            diceCube.style.transform = `rotateX(${currentRotationX + randomSpinsX}deg) rotateY(${currentRotationY + randomSpinsY}deg)`;
+            setTimeout(() => {
+                 diceValueDisplay.textContent = finalValue;
+            }, 1000); 
+        }
+
+        // --- FUNGSI UI UPDATE LOKAL ---
+        function updateUI() {
+            // Update Daftar Pemain di Sisi
+            playersContainer.innerHTML = '';
+            if (localPlayers.length > 0) {
+                localPlayers.forEach((player, index) => {
+                    const playerDiv = document.createElement('div');
+                    playerDiv.classList.add('player-info-card', 'p-3', 'rounded-lg', 'shadow-md', 'flex', 'items-center', 'space-x-3', player.color.replace('bg-', 'border-'), 'border-2');
+                    if (index === localCurrentPlayerIndex && localGameStatus === 'playing') {
+                         playerDiv.classList.add('current-player', 'ring-2', 'ring-offset-2', 'ring-purple-500');
+                    }
+                    const avatarImg = document.createElement('img');
+                    avatarImg.src = player.avatar;
+                    avatarImg.alt = player.name;
+                    avatarImg.classList.add('w-10', 'h-10', 'rounded-full', 'object-cover', 'border-2', 'border-white');
+                    const namePosDiv = document.createElement('div');
+                    const nameP = document.createElement('p');
+                    nameP.classList.add('font-semibold', 'text-sm', player.color.replace('bg-','text-').replace('-500','-700'));
+                    nameP.textContent = player.name;
+                    const posP = document.createElement('p');
+                    posP.classList.add('text-xs', 'text-gray-600');
+                    posP.textContent = `Posisi: ${player.position}`;
+                    namePosDiv.appendChild(nameP);
+                    namePosDiv.appendChild(posP);
+                    playerDiv.appendChild(avatarImg);
+                    playerDiv.appendChild(namePosDiv);
+                    playersContainer.appendChild(playerDiv);
+                });
+            }
+
+            // Update Bidak Pemain di Papan
+            const currentPieceElementsOnBoard = new Map();
+            document.querySelectorAll('.player-piece').forEach(domPiece => {
+                currentPieceElementsOnBoard.set(domPiece.dataset.playerId, domPiece);
+            });
+
+            localPlayers.forEach(player => {
+                let pieceDOM = currentPieceElementsOnBoard.get(player.id);
+                if (!pieceDOM) { 
+                    pieceDOM = document.createElement('div');
+                    pieceDOM.dataset.playerId = player.id;
+                    pieceDOM.classList.add('player-piece');
+                    boardContainer.appendChild(pieceDOM);
+                }
+                
+                // Hapus semua kelas warna sebelumnya dan tambahkan yang baru
+                playerColors.forEach(c => pieceDOM.classList.remove(c));
+                pieceDOM.classList.add(player.color); // player.color adalah 'bg-red-500', dll.
+                pieceDOM.textContent = player.name.substring(0, 1).toUpperCase();
+
+                const cellElement = document.getElementById(`cell-${player.position}`);
+                if (cellElement) {
+                    const cellRect = cellElement.getBoundingClientRect();
+                    const boardRect = boardContainer.getBoundingClientRect();
+                    pieceDOM.style.top = `${(cellRect.top - boardRect.top) + cellRect.height * 0.2}px`;
+                    pieceDOM.style.left = `${(cellRect.left - boardRect.left) + cellRect.width * 0.2}px`;
+                    pieceDOM.style.width = `${cellRect.width * 0.6}px`;
+                    pieceDOM.style.height = `${cellRect.height * 0.6}px`;
+                } else {
+                    console.warn(`Target cell ${player.position} not found for player ${player.name}`);
+                }
+                currentPieceElementsOnBoard.delete(player.id);
+            });
+            currentPieceElementsOnBoard.forEach(stalePiece => stalePiece.remove());
+
+
+            // Update Info Giliran dan Tombol
+            if (localPlayers.length > 0 && localGameStatus === 'playing') {
+                const currentPlayer = localPlayers[localCurrentPlayerIndex];
+                currentPlayerNameDisplay.textContent = currentPlayer.name;
+                // rollDiceButton.disabled = false; // Diatur oleh logika rollDiceButton
+            } else if (localGameStatus !== 'finished') {
+                currentPlayerNameDisplay.textContent = '-';
+                rollDiceButton.disabled = true;
+            }
+            
+            // Cek Pemenang
+            if (localGameStatus === 'finished' && localWinner) {
+                winnerAvatarModal.src = localWinner.avatar;
+                winnerMessage.textContent = `${localWinner.name} adalah pemenangnya!`;
+                winnerModal.classList.remove('hidden');
+                rollDiceButton.disabled = true;
+                // gameMessage.textContent sudah diatur oleh checkWinAndUpdateTurn
+            } else {
+                winnerModal.classList.add('hidden');
+            }
+        }
+
+        // --- FUNGSI NAVIGASI & UTILITAS ---
+        function switchToGameScreen() {
+            setupScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            createBoard(); 
+        }
+
+        function resetLocalGameState() {
+            localPlayers = [];
+            localCurrentPlayerIndex = 0;
+            localGameStatus = 'waiting';
+            localDiceValue = null;
+            localWinner = null;
+            nextPlayerColorIndex = 0;
+            currentAvatarForSetup = 'https://placehold.co/80x80/E2E8F0/A0AEC0?text=Avatar';
+            currentAvatarPreview.src = currentAvatarForSetup;
+            playerNameSetupInput.value = '';
+            if (addedPlayersList) updateAddedPlayersList(); 
+            if (gameMessage) gameMessage.textContent = '';
+            if (diceValueDisplay) diceValueDisplay.textContent = '';
+            if (setupMessage) setupMessage.textContent = '';
+            const svgOverlay = document.getElementById('board-svg-overlay');
+            if (svgOverlay) svgOverlay.innerHTML = ''; 
+        }
+
+        function switchToSetupScreen() {
+            resetLocalGameState();
+            gameScreen.classList.add('hidden');
+            setupScreen.classList.remove('hidden');
+            winnerModal.classList.add('hidden'); 
+        }
+        
+        newGameButton.addEventListener('click', switchToSetupScreen);
+        closeWinnerModalButton.addEventListener('click', () => winnerModal.classList.add('hidden'));
+        playAgainButton.addEventListener('click', () => {
+            winnerModal.classList.add('hidden');
+            switchToSetupScreen();
+        });
+
+        // --- INISIALISASI APLIKASI LOKAL ---
+        function performAppInitialization() {
+            setupWebcam(); 
+            createBoard(); 
+            updateAddedPlayersList(); 
+        }
+
+        performAppInitialization(); 
+    </script>
+</body>
+</html>
