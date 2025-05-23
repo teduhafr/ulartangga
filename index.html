@@ -33,11 +33,12 @@
             background-position: center;
         }
         .player-piece {
-            width: 60%; 
-            height: 60%;
+            width: 70%; /* Sedikit lebih besar agar avatar lebih jelas */
+            height: 70%;
             border-radius: 50%;
             position: absolute;
-            transition: top 0.5s ease-in-out, left 0.5s ease-in-out; /* Animasi spesifik untuk top dan left */
+            /* Durasi transisi disesuaikan dengan ANIMATION_STEP_DURATION_PER_TILE di JS */
+            transition: top 0.15s linear, left 0.15s linear; 
             display: flex;
             align-items: center;
             justify-content: center;
@@ -234,11 +235,11 @@
         let localPlayers = [];
         let localCurrentPlayerIndex = 0;
         let localGameStatus = 'waiting'; 
-        let localDiceValue = null; // Menyimpan nilai dadu asli yang digulir
+        let localDiceValue = null; 
         let localWinner = null; 
         let nextPlayerColorIndex = 0;
         let currentAvatarForSetup = 'https://placehold.co/80x80/E2E8F0/A0AEC0?text=Avatar'; 
-        const ANIMATION_STEP_DURATION = 600; // Durasi animasi pergerakan (ms), sesuaikan dengan CSS transition
+        const ANIMATION_STEP_DURATION_PER_TILE = 150; // Durasi animasi pergerakan per kotak (ms)
 
         const playerColors = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500'];
         const MAX_PLAYERS = 4;
@@ -373,24 +374,23 @@
             const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
             const markerSnake = document.createElementNS("http://www.w3.org/2000/svg", "marker");
             markerSnake.setAttribute('id', 'arrowhead-snake');
-            markerSnake.setAttribute('markerWidth', '8'); // Sedikit lebih besar untuk path
+            markerSnake.setAttribute('markerWidth', '8'); 
             markerSnake.setAttribute('markerHeight', '6');
-            markerSnake.setAttribute('refX', '7'); // Disesuaikan agar panah tidak terlalu menjorok ke dalam path
+            markerSnake.setAttribute('refX', '7'); 
             markerSnake.setAttribute('refY', '3');
-            markerSnake.setAttribute('orient', 'auto-start-reverse'); // Orientasi untuk path
+            markerSnake.setAttribute('orient', 'auto-start-reverse'); 
             const polygonSnake = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
-            polygonSnake.setAttribute('points', '0 0, 8 3, 0 6'); // Bentuk panah
+            polygonSnake.setAttribute('points', '0 0, 8 3, 0 6'); 
             polygonSnake.setAttribute('fill', '#E53E3E'); 
             markerSnake.appendChild(polygonSnake);
             defs.appendChild(markerSnake);
             svgOverlay.appendChild(defs);
 
-            // Gambar Ular (Melengkung)
             Object.keys(snakes).forEach((startCellKey, index) => {
                 const startCell = parseInt(startCellKey);
                 const endCell = snakes[startCell];
-                const P1 = getCellCoordinates(startCell); // Kepala Ular
-                const P2 = getCellCoordinates(endCell);   // Ekor Ular
+                const P1 = getCellCoordinates(startCell); 
+                const P2 = getCellCoordinates(endCell);   
 
                 if (P1 && P2) {
                     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
@@ -400,12 +400,10 @@
                     const deltaY = P2.y - P1.y;
                     const dist = Math.sqrt(deltaX*deltaX + deltaY*deltaY);
                     
-                    // Faktor kelengkungan dan arah bisa bervariasi
-                    let curveFactor = dist * 0.20; // Besarnya lengkungan
-                    // Arah lengkungan bisa dibuat bervariasi, misal berdasarkan ganjil/genap index atau posisi
+                    let curveFactor = dist * 0.20; 
                     const curveDirection = (index % 2 === 0) ? 1 : -1; 
-                    if (Math.abs(deltaX) < P1.width) curveFactor *= 1.5; // Lebih melengkung jika vertikal
-                    if (Math.abs(deltaY) < P1.height) curveFactor *= 0.7; // Kurang melengkung jika horizontal
+                    if (Math.abs(deltaX) < P1.width * 0.5) curveFactor *= 1.5; 
+                    if (Math.abs(deltaY) < P1.height * 0.5) curveFactor *= 0.7;
 
                     const controlX = midX - curveDirection * (deltaY / dist) * curveFactor;
                     const controlY = midY + curveDirection * (deltaX / dist) * curveFactor;
@@ -420,7 +418,6 @@
                 }
             });
 
-            // Gambar Tangga (Tetap garis lurus, tapi bisa ditingkatkan jika mau)
             for (const startCell in ladders) {
                 const endCell = ladders[startCell];
                 const startCoords = getCellCoordinates(parseInt(startCell));
@@ -431,7 +428,7 @@
                     const dx = endCoords.x - startCoords.x;
                     const dy = endCoords.y - startCoords.y;
                     const len = Math.sqrt(dx*dx + dy*dy);
-                    if (len === 0) continue; // Hindari pembagian dengan nol
+                    if (len === 0) continue; 
                     const perpX = -dy / len * ladderWidth;
                     const perpY = dx / len * ladderWidth;
 
@@ -490,6 +487,7 @@
                 name: playerName,
                 avatar: currentAvatarForSetup,
                 position: 1,
+                displayPosition: 1, // Posisi untuk rendering animasi
                 color: playerColors[nextPlayerColorIndex % playerColors.length]
             };
             localPlayers.push(newPlayer);
@@ -527,83 +525,100 @@
             localCurrentPlayerIndex = 0;
             localWinner = null;
             localDiceValue = null;
+            localPlayers.forEach(p => { // Reset displayPosition saat game baru
+                p.position = 1;
+                p.displayPosition = 1;
+            });
             switchToGameScreen();
             updateUI(); 
         });
 
         // --- FUNGSI GAME LOGIC LOKAL ---
-        rollDiceButton.addEventListener('click', () => {
-            if (localGameStatus !== 'playing' || localPlayers.length === 0) return;
+
+        async function movePlayerPieceSequentially(player, targetPosition, moveTypeMessage) {
+            const startPos = player.displayPosition;
+            const endPos = targetPosition;
+            const stepDirection = (endPos > startPos) ? 1 : -1;
+            const numSteps = Math.abs(endPos - startPos);
+
+            if (numSteps === 0) return Promise.resolve();
+
+            gameMessage.textContent = `${player.name} ${moveTypeMessage} ke ${endPos}...`;
+
+            for (let i = 0; i < numSteps; i++) {
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_STEP_DURATION_PER_TILE));
+                player.displayPosition += stepDirection;
+                updateUI(); // Hanya update posisi bidak, jangan info pemain lain
+            }
+            player.position = player.displayPosition; // Sinkronkan posisi data dengan display
+            return Promise.resolve();
+        }
+
+        rollDiceButton.addEventListener('click', async () => {
+            if (localGameStatus !== 'playing' || localPlayers.length === 0 || rollDiceButton.disabled) return;
 
             rollDiceButton.disabled = true; 
             const rolledValue = Math.floor(Math.random() * 6) + 1;
-            localDiceValue = rolledValue; // Simpan nilai dadu asli
+            localDiceValue = rolledValue; 
             
             animateDiceRoll(rolledValue); 
 
-            setTimeout(() => {
-                const currentPlayer = localPlayers[localCurrentPlayerIndex];
-                if (!currentPlayer) { 
-                    rollDiceButton.disabled = false; return;
-                }
+            await new Promise(resolve => setTimeout(resolve, 1200)); // Waktu untuk animasi dadu
 
-                let message = `${currentPlayer.name} menggulir ${rolledValue}.`;
-                let intermediatePosition = currentPlayer.position + rolledValue;
+            const currentPlayer = localPlayers[localCurrentPlayerIndex];
+            if (!currentPlayer) { 
+                rollDiceButton.disabled = false; return;
+            }
 
-                if (intermediatePosition > BOARD_SIZE) {
-                    intermediatePosition = BOARD_SIZE - (intermediatePosition - BOARD_SIZE); 
-                    message += ` Mundur ke ${intermediatePosition}.`;
-                }
-                
-                gameMessage.textContent = message + " Bergerak...";
-                // Perbarui posisi untuk animasi pertama (pergerakan dadu)
-                currentPlayer.position = intermediatePosition; 
-                updateUI(); // Ini akan memicu transisi CSS untuk pergerakan pertama
+            let message = `${currentPlayer.name} menggulir ${rolledValue}.`;
+            gameMessage.textContent = message; // Pesan awal
 
-                setTimeout(() => {
-                    // Cek ular/tangga setelah animasi pertama selesai
-                    let finalPosition = intermediatePosition;
-                    let onSpecial = false;
+            let currentLogicalPosition = currentPlayer.position; // Posisi logis sebelum bergerak
+            let targetAfterDice = currentLogicalPosition + rolledValue;
 
-                    if (snakes[intermediatePosition]) {
-                        finalPosition = snakes[intermediatePosition];
-                        message += ` Turun ular ke ${finalPosition}!`;
-                        onSpecial = true;
-                    } else if (ladders[intermediatePosition]) {
-                        finalPosition = ladders[intermediatePosition];
-                        message += ` Naik tangga ke ${finalPosition}!`;
-                        onSpecial = true;
-                    }
+            if (targetAfterDice > BOARD_SIZE) {
+                targetAfterDice = BOARD_SIZE - (targetAfterDice - BOARD_SIZE); 
+                message += ` Mundur ke ${targetAfterDice}.`;
+            }
+            
+            await movePlayerPieceSequentially(currentPlayer, targetAfterDice, "bergerak");
+            message = `${currentPlayer.name} di ${currentPlayer.position}.`; // Update pesan setelah gerakan dadu
 
-                    if (onSpecial) {
-                        gameMessage.textContent = message + " Bergerak lagi...";
-                        // Perbarui posisi untuk animasi kedua (ular/tangga)
-                        currentPlayer.position = finalPosition;
-                        updateUI(); // Ini akan memicu transisi CSS untuk pergerakan kedua
-                        
-                        setTimeout(() => {
-                            checkWinAndUpdateTurn(currentPlayer, finalPosition, message);
-                        }, ANIMATION_STEP_DURATION);
-                    } else {
-                        // Tidak ada ular/tangga, langsung selesaikan giliran
-                        checkWinAndUpdateTurn(currentPlayer, finalPosition, message.replace(" Bergerak...", ""));
-                    }
-                }, ANIMATION_STEP_DURATION);
-            }, 1200); // Waktu untuk animasi dadu
+            // Cek ular/tangga setelah animasi pertama selesai
+            let finalTargetPosition = currentPlayer.position; // Posisi setelah gerakan dadu
+            let onSpecial = false;
+
+            if (snakes[finalTargetPosition]) {
+                const snakeEnd = snakes[finalTargetPosition];
+                message += ` Turun ular ke ${snakeEnd}!`;
+                finalTargetPosition = snakeEnd;
+                onSpecial = true;
+            } else if (ladders[finalTargetPosition]) {
+                const ladderEnd = ladders[finalTargetPosition];
+                message += ` Naik tangga ke ${ladderEnd}!`;
+                finalTargetPosition = ladderEnd;
+                onSpecial = true;
+            }
+
+            if (onSpecial) {
+                await movePlayerPieceSequentially(currentPlayer, finalTargetPosition, onSpecial && snakes[currentPlayer.position] ? "turun ular" : "naik tangga");
+                 message = `${currentPlayer.name} ${onSpecial && snakes[currentPlayer.position] ? "turun ular" : "naik tangga"} ke ${currentPlayer.position}.`;
+            }
+            
+            checkWinAndUpdateTurn(currentPlayer, currentPlayer.position, message);
         });
 
         function checkWinAndUpdateTurn(player, finalPos, turnMessage) {
-            player.position = finalPos; // Pastikan posisi data model sudah final
-
+            // player.position sudah diupdate oleh movePlayerPieceSequentially
             if (finalPos === BOARD_SIZE) {
-                turnMessage = `${player.name} MENANG!`; // Ganti pesan jika menang
+                turnMessage = `${player.name} MENANG!`; 
                 localGameStatus = 'finished';
                 localWinner = player;
             } else {
                 localCurrentPlayerIndex = (localCurrentPlayerIndex + 1) % localPlayers.length;
             }
             gameMessage.textContent = turnMessage;
-            updateUI(); // Update UI final untuk giliran, pemenang, dll.
+            updateUI(); 
             
             if (localGameStatus === 'playing') {
                 rollDiceButton.disabled = false;
@@ -642,20 +657,20 @@
                     if (index === localCurrentPlayerIndex && localGameStatus === 'playing') {
                          playerDiv.classList.add('current-player', 'ring-2', 'ring-offset-2', 'ring-purple-500');
                     }
-                    const avatarImg = document.createElement('img');
-                    avatarImg.src = player.avatar;
-                    avatarImg.alt = player.name;
-                    avatarImg.classList.add('w-10', 'h-10', 'rounded-full', 'object-cover', 'border-2', 'border-white');
+                    const avatarImgDisplay = document.createElement('img'); // Ganti nama variabel agar tidak konflik
+                    avatarImgDisplay.src = player.avatar;
+                    avatarImgDisplay.alt = player.name;
+                    avatarImgDisplay.classList.add('w-10', 'h-10', 'rounded-full', 'object-cover', 'border-2', 'border-white');
                     const namePosDiv = document.createElement('div');
                     const nameP = document.createElement('p');
                     nameP.classList.add('font-semibold', 'text-sm', player.color.replace('bg-','text-').replace('-500','-700'));
                     nameP.textContent = player.name;
                     const posP = document.createElement('p');
                     posP.classList.add('text-xs', 'text-gray-600');
-                    posP.textContent = `Posisi: ${player.position}`;
+                    posP.textContent = `Posisi: ${player.position}`; // Tampilkan posisi logis
                     namePosDiv.appendChild(nameP);
                     namePosDiv.appendChild(posP);
-                    playerDiv.appendChild(avatarImg);
+                    playerDiv.appendChild(avatarImgDisplay);
                     playerDiv.appendChild(namePosDiv);
                     playersContainer.appendChild(playerDiv);
                 });
@@ -676,44 +691,42 @@
                     boardContainer.appendChild(pieceDOM);
                 }
                 
-                // Hapus semua kelas warna sebelumnya dan tambahkan yang baru
-                playerColors.forEach(c => pieceDOM.classList.remove(c));
-                pieceDOM.classList.add(player.color); // player.color adalah 'bg-red-500', dll.
-                pieceDOM.textContent = player.name.substring(0, 1).toUpperCase();
+                playerColors.forEach(c => pieceDOM.classList.remove(c)); // Hapus kelas warna lama
+                pieceDOM.classList.add(player.color.replace('border-','bg-')); // Pastikan ini adalah kelas bg-*
+                
+                // Gunakan avatar sebagai background
+                pieceDOM.style.backgroundImage = `url(${player.avatar})`;
+                pieceDOM.textContent = ''; // Kosongkan teks jika menggunakan avatar
 
-                const cellElement = document.getElementById(`cell-${player.position}`);
+                const cellElement = document.getElementById(`cell-${player.displayPosition}`); // Gunakan displayPosition untuk rendering
                 if (cellElement) {
                     const cellRect = cellElement.getBoundingClientRect();
                     const boardRect = boardContainer.getBoundingClientRect();
-                    pieceDOM.style.top = `${(cellRect.top - boardRect.top) + cellRect.height * 0.2}px`;
-                    pieceDOM.style.left = `${(cellRect.left - boardRect.left) + cellRect.width * 0.2}px`;
-                    pieceDOM.style.width = `${cellRect.width * 0.6}px`;
-                    pieceDOM.style.height = `${cellRect.height * 0.6}px`;
+                    pieceDOM.style.top = `${(cellRect.top - boardRect.top) + (cellRect.height * 0.15)}px`; // Sesuaikan offset agar pas
+                    pieceDOM.style.left = `${(cellRect.left - boardRect.left) + (cellRect.width * 0.15)}px`;
+                    pieceDOM.style.width = `${cellRect.width * 0.70}px`; // Sesuaikan ukuran
+                    pieceDOM.style.height = `${cellRect.height * 0.70}px`;
                 } else {
-                    console.warn(`Target cell ${player.position} not found for player ${player.name}`);
+                    console.warn(`Target cell ${player.displayPosition} not found for player ${player.name}`);
                 }
                 currentPieceElementsOnBoard.delete(player.id);
             });
             currentPieceElementsOnBoard.forEach(stalePiece => stalePiece.remove());
 
 
-            // Update Info Giliran dan Tombol
             if (localPlayers.length > 0 && localGameStatus === 'playing') {
                 const currentPlayer = localPlayers[localCurrentPlayerIndex];
                 currentPlayerNameDisplay.textContent = currentPlayer.name;
-                // rollDiceButton.disabled = false; // Diatur oleh logika rollDiceButton
             } else if (localGameStatus !== 'finished') {
                 currentPlayerNameDisplay.textContent = '-';
                 rollDiceButton.disabled = true;
             }
             
-            // Cek Pemenang
             if (localGameStatus === 'finished' && localWinner) {
                 winnerAvatarModal.src = localWinner.avatar;
                 winnerMessage.textContent = `${localWinner.name} adalah pemenangnya!`;
                 winnerModal.classList.remove('hidden');
                 rollDiceButton.disabled = true;
-                // gameMessage.textContent sudah diatur oleh checkWinAndUpdateTurn
             } else {
                 winnerModal.classList.add('hidden');
             }
@@ -727,6 +740,10 @@
         }
 
         function resetLocalGameState() {
+            localPlayers.forEach(p => { // Hapus bidak pemain dari papan
+                const pieceDOM = document.querySelector(`.player-piece[data-player-id="${p.id}"]`);
+                if (pieceDOM) pieceDOM.remove();
+            });
             localPlayers = [];
             localCurrentPlayerIndex = 0;
             localGameStatus = 'waiting';
@@ -757,6 +774,18 @@
             winnerModal.classList.add('hidden');
             switchToSetupScreen();
         });
+
+        // Event listener untuk tombol spasi
+        document.addEventListener('keydown', (event) => {
+            if (event.code === 'Space' || event.key === ' ') {
+                // Cek apakah game screen aktif dan tombol roll tidak disabled
+                if (!gameScreen.classList.contains('hidden') && !rollDiceButton.disabled) {
+                    event.preventDefault(); // Mencegah scroll halaman
+                    rollDiceButton.click();
+                }
+            }
+        });
+
 
         // --- INISIALISASI APLIKASI LOKAL ---
         function performAppInitialization() {
